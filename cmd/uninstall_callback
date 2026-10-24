@@ -1,0 +1,31 @@
+#!/bin/bash
+# 卸载后清理：确认没有遗留进程，并报告风扇状态。
+
+PKGVAR="${TRIM_PKGVAR:-/tmp/g2fan}"
+PID_FILE="$PKGVAR/app.pid"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$PKGVAR/info.log" 2>/dev/null
+}
+
+if [ -f "$PID_FILE" ]; then
+    pid=$(head -n 1 "$PID_FILE" 2>/dev/null | tr -d '[:space:]')
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        log_msg "发现遗留进程 pid=$pid，终止它"
+        kill -TERM "$pid" 2>/dev/null
+        sleep 3
+        kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
+    fi
+    rm -f "$PID_FILE" 2>/dev/null
+fi
+
+# 快照文件若仍存在，说明风扇尚未交还固件；此处不再尝试写硬件
+# （应用文件可能已被删除），仅记录提示。
+if [ -f "$PKGVAR/ec_snapshot.json" ]; then
+    log_msg "WARN: 仍存在 EC 快照文件，风扇可能停留在手动转速；重启设备即可恢复固件自动控制"
+fi
+
+log_msg "g2fan 已卸载"
+
+# 应用数据目录由系统按卸载向导的选择处理，此处不主动删除用户配置。
+exit 0

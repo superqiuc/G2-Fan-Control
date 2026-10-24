@@ -1,0 +1,15 @@
+# 构建产物
+dist/
+*.fpk
+
+# 厂商二进制（仅用于协议分析，不随仓库分发）
+refs/
+
+# Python
+__pycache__/
+*.pyc
+
+# 临时文件
+.tmp/
+*.log
+.build/

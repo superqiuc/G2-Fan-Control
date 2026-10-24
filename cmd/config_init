@@ -1,0 +1,37 @@
+#!/bin/bash
+# 应用设置变更前：校验向导输入，非法值直接拒绝并给出可见原因。
+
+log() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >> "$TRIM_TEMP_LOGFILE" 2>/dev/null
+    fi
+}
+
+mode="${wizard_mode:-}"
+if [ -n "$mode" ]; then
+    case "$mode" in
+        default|auto|manual|full) ;;
+        *) log "运行模式非法：$mode"; exit 1 ;;
+    esac
+fi
+
+source_val="${wizard_temp_source:-}"
+if [ -n "$source_val" ]; then
+    case "$source_val" in
+        cpu|disk|max) ;;
+        *) log "温度来源非法：$source_val"; exit 1 ;;
+    esac
+fi
+
+speed="${wizard_manual_speed:-}"
+if [ -n "$speed" ]; then
+    case "$speed" in
+        ''|*[!0-9]*) log "手动转速必须是 10-100 的整数"; exit 1 ;;
+    esac
+    if [ "$speed" -lt 10 ] || [ "$speed" -gt 100 ]; then
+        log "手动转速超出范围（10-100）：$speed"
+        exit 1
+    fi
+fi
+
+exit 0

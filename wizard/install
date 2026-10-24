@@ -1,0 +1,38 @@
+[
+  {
+    "stepTitle": "风扇控制设置",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "本应用通过 /dev/port 直接驱动拾光坞 G2 的 EC 风扇控制器（寄存器 0x2F1 / 0x1807 / 0x1809），不依赖厂商二进制。以下选项安装后都可随时在网页界面修改。"
+      },
+      {
+        "type": "password",
+        "field": "wizard_password",
+        "label": "访问密码（留空表示不启用认证）",
+        "initValue": ""
+      },
+      {
+        "type": "select",
+        "field": "wizard_mode",
+        "label": "默认运行模式",
+        "initValue": "default",
+        "options": [
+          { "label": "默认曲线（推荐，低温安静）", "value": "default" },
+          { "label": "自定义曲线", "value": "auto" },
+          { "label": "手动固定转速", "value": "manual" },
+          { "label": "全速", "value": "full" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_manual_speed",
+        "label": "手动模式转速百分比（10-100）",
+        "initValue": "50",
+        "rules": [
+          { "pattern": "^[0-9]+$", "message": "请输入 10 到 100 之间的整数" }
+        ]
+      }
+    ]
+  }
+]

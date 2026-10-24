@@ -1,0 +1,83 @@
+#!/bin/bash
+# 安装后初始化：把安装向导收集的值写入应用配置，并修正目录属主。
+#
+# 说明：应用以 root 启动（需要打开 /dev/port），但守护进程随后会降权到包用户。
+# 因此必须把应用数据目录交给包用户，否则降权后无法保存配置与快照。
+
+PKGVAR="${TRIM_PKGVAR:-/tmp/g2fan}"
+PKGETC="${TRIM_PKGETC:-/tmp/g2fan-etc}"
+CONFIG_FILE="$PKGVAR/config.json"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$PKGVAR/info.log" 2>/dev/null
+}
+
+mkdir -p "$PKGVAR" "$PKGETC" 2>/dev/null
+
+PY=""
+for candidate in /var/apps/python312/target/bin/python3 /usr/bin/python3 python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
+done
+
+if [ -n "$PY" ]; then
+    # 向导值通过环境变量传入，避免出现在进程命令行里
+    "$PY" - "$CONFIG_FILE" <<'PYEOF'
+import json, os, sys
+
+path = sys.argv[1]
+cfg = {}
+if os.path.exists(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        if not isinstance(cfg, dict):
+            cfg = {}
+    except (OSError, ValueError):
+        cfg = {}
+
+mode = (os.environ.get("wizard_mode") or "").strip()
+if mode in ("default", "auto", "manual", "full"):
+    cfg["mode"] = mode
+
+raw_speed = (os.environ.get("wizard_manual_speed") or "").strip()
+if raw_speed.isdigit():
+    cfg["manual_speed"] = max(10, min(100, int(raw_speed)))
+
+# 密码只在用户确实填写时写入，避免空值覆盖已设置的密码
+password = os.environ.get("wizard_password")
+if password:
+    cfg["password"] = password
+
+# 端口必须与 app/ui/config 中桌面入口声明的端口一致，
+# 否则应用中心图标会指向一个没人监听的端口。
+cfg.setdefault("port", 8798)
+cfg.setdefault("bind", "0.0.0.0")
+
+os.makedirs(os.path.dirname(path), exist_ok=True)
+tmp = path + ".tmp"
+with open(tmp, "w", encoding="utf-8") as fh:
+    json.dump(cfg, fh, indent=2, ensure_ascii=False)
+    fh.flush()
+    os.fsync(fh.fileno())
+os.replace(tmp, path)
+os.chmod(path, 0o600)
+print(f"config written: {path}")
+PYEOF
+    log_msg "已写入初始配置"
+else
+    log_msg "WARN: 未找到 Python，跳过初始配置写入"
+fi
+
+# 数据目录交给包用户：守护进程降权后仍需写入配置与 EC 快照
+if [ -n "${TRIM_USERNAME:-}" ] && [ -n "${TRIM_GROUPNAME:-}" ]; then
+    chown -R "$TRIM_USERNAME:$TRIM_GROUPNAME" "$PKGVAR" "$PKGETC" 2>/dev/null
+    log_msg "已将 $PKGVAR / $PKGETC 属主设为 $TRIM_USERNAME:$TRIM_GROUPNAME"
+else
+    log_msg "WARN: 未取得包用户名，跳过 chown"
+fi
+
+# 确保脚本可执行
+APPDEST="${TRIM_APPDEST:-/var/apps/g2fan/target}"
+chmod +x "$APPDEST/server/g2fan-run.py" 2>/dev/null
+
+exit 0

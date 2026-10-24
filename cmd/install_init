@@ -1,0 +1,39 @@
+#!/bin/bash
+# 安装前检查：确认运行环境可用，避免装上一个跑不起来的应用。
+
+log() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >> "$TRIM_TEMP_LOGFILE" 2>/dev/null
+    fi
+}
+
+find_python() {
+    local candidate
+    for candidate in \
+        /var/apps/python312/target/bin/python3 \
+        /usr/bin/python3 \
+        /usr/local/bin/python3 \
+        /bin/python3 \
+        python3
+    do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            if "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' 2>/dev/null; then
+                printf '%s' "$candidate"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+PY=$(find_python) || {
+    log "未找到 Python 3.8+ 解释器。请先在飞牛应用中心安装 python312，然后重新安装本应用。"
+    exit 1
+}
+
+if [ ! -e /dev/port ]; then
+    log "提示：当前系统没有 /dev/port（内核未启用 CONFIG_DEVPORT）。"
+    log "本应用将回退到通用 hwmon PWM 后端；若你的设备是拾光坞 G2，请确认内核配置。"
+fi
+
+exit 0

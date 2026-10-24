@@ -1,0 +1,24 @@
+#!/bin/bash
+# 升级后：保留用户配置，修正属主与权限。
+
+PKGVAR="${TRIM_PKGVAR:-/tmp/g2fan}"
+PKGETC="${TRIM_PKGETC:-/tmp/g2fan-etc}"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$PKGVAR/info.log" 2>/dev/null
+}
+
+mkdir -p "$PKGVAR" "$PKGETC" 2>/dev/null
+
+# 保留 config.json（用户曲线与设置），只修正属主
+if [ -n "${TRIM_USERNAME:-}" ] && [ -n "${TRIM_GROUPNAME:-}" ]; then
+    chown -R "$TRIM_USERNAME:$TRIM_GROUPNAME" "$PKGVAR" "$PKGETC" 2>/dev/null
+    log_msg "升级完成，已修正数据目录属主（保留用户配置）"
+else
+    log_msg "升级完成（未取得包用户名，跳过 chown）"
+fi
+
+APPDEST="${TRIM_APPDEST:-/var/apps/g2fan/target}"
+chmod +x "$APPDEST/server/g2fan-run.py" 2>/dev/null
+
+exit 0

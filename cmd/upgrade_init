@@ -1,0 +1,10 @@
+#!/bin/bash
+# 升级前：停止旧版本，确保其把风扇控制权交还固件，避免升级期间无人控温。
+
+APPDEST="${TRIM_APPDEST:-/var/apps/g2fan/target}"
+
+if [ -x "$APPDEST/cmd/main" ]; then
+    "$APPDEST/cmd/main" stop
+fi
+
+exit 0

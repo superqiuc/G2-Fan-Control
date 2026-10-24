@@ -1,0 +1,76 @@
+#!/bin/bash
+# 应用设置变更后：把向导值合并进 config.json 并重启服务使其生效。
+#
+# 与安装向导的区别：密码留空表示「保持原密码不变」，避免误清空。
+
+PKGVAR="${TRIM_PKGVAR:-/tmp/g2fan}"
+CONFIG_FILE="$PKGVAR/config.json"
+APPDEST="${TRIM_APPDEST:-/var/apps/g2fan/target}"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$PKGVAR/info.log" 2>/dev/null
+}
+
+PY=""
+for candidate in /var/apps/python312/target/bin/python3 /usr/bin/python3 python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
+done
+
+if [ -n "$PY" ]; then
+    "$PY" - "$CONFIG_FILE" <<'PYEOF'
+import json, os, sys
+
+path = sys.argv[1]
+cfg = {}
+if os.path.exists(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        if not isinstance(cfg, dict):
+            cfg = {}
+    except (OSError, ValueError):
+        cfg = {}
+
+mode = (os.environ.get("wizard_mode") or "").strip()
+if mode in ("default", "auto", "manual", "full"):
+    cfg["mode"] = mode
+
+src = (os.environ.get("wizard_temp_source") or "").strip()
+if src in ("cpu", "disk", "max"):
+    cfg["temp_source"] = src
+
+raw_speed = (os.environ.get("wizard_manual_speed") or "").strip()
+if raw_speed.isdigit():
+    cfg["manual_speed"] = max(10, min(100, int(raw_speed)))
+
+# 留空 = 不修改已有密码
+password = os.environ.get("wizard_password")
+if password:
+    cfg["password"] = password
+
+os.makedirs(os.path.dirname(path), exist_ok=True)
+tmp = path + ".tmp"
+with open(tmp, "w", encoding="utf-8") as fh:
+    json.dump(cfg, fh, indent=2, ensure_ascii=False)
+    fh.flush()
+    os.fsync(fh.fileno())
+os.replace(tmp, path)
+os.chmod(path, 0o600)
+PYEOF
+    log_msg "配置已更新"
+fi
+
+if [ -n "${TRIM_USERNAME:-}" ] && [ -n "${TRIM_GROUPNAME:-}" ]; then
+    chown -R "$TRIM_USERNAME:$TRIM_GROUPNAME" "$PKGVAR" 2>/dev/null
+fi
+
+# 重启服务让新配置生效（仅当原本在运行）
+if [ -x "$APPDEST/cmd/main" ]; then
+    if "$APPDEST/cmd/main" status >/dev/null 2>&1; then
+        "$APPDEST/cmd/main" stop
+        "$APPDEST/cmd/main" start
+        log_msg "服务已按新配置重启"
+    fi
+fi
+
+exit 0

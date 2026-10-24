@@ -1,0 +1,10 @@
+#!/bin/bash
+# 卸载前：先停服务，确保风扇控制权被交还固件，再让系统删除文件。
+
+APPDEST="${TRIM_APPDEST:-/var/apps/g2fan/target}"
+
+if [ -x "$APPDEST/cmd/main" ]; then
+    "$APPDEST/cmd/main" stop
+fi
+
+exit 0

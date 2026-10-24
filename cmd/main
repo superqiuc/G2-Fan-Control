@@ -1,0 +1,195 @@
+#!/bin/bash
+# g2fan 生命周期脚本：start / stop / status
+#
+# 由飞牛 fnOS 以 root 调用（config/privilege 中 run-as=root）。
+# root 只在启动初期用于打开 /dev/port；守护进程随即降权到包用户运行。
+# 退出时守护进程会把风扇控制权还原给固件；若进程被强杀未能还原，
+# 本脚本会依据落盘的 EC 快照执行 g2fan-run.py --release 兜底。
+
+PKGVAR="${TRIM_PKGVAR:-/tmp/g2fan}"
+APPDEST="${TRIM_APPDEST:-/var/apps/g2fan/target}"
+LOG_FILE="$PKGVAR/info.log"
+PID_FILE="$PKGVAR/app.pid"
+SNAP_FILE="$PKGVAR/ec_snapshot.json"
+CONFIG_FILE="$PKGVAR/config.json"
+RUNNER="$APPDEST/server/g2fan-run.py"
+DEFAULT_PORT=8798
+
+mkdir -p "$PKGVAR" 2>/dev/null
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE" 2>/dev/null
+}
+
+# 用户可见的失败原因：写入 fnOS 提供的临时日志文件
+fail() {
+    log_msg "ERROR: $1"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >> "$TRIM_TEMP_LOGFILE" 2>/dev/null
+    fi
+    return 1
+}
+
+# 依次寻找可用的 Python 3.8+ 解释器（优先 fnOS 的 python312 运行时）
+find_python() {
+    local candidate
+    for candidate in \
+        /var/apps/python312/target/bin/python3 \
+        /usr/bin/python3 \
+        /usr/local/bin/python3 \
+        /bin/python3 \
+        python3
+    do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            if "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' 2>/dev/null; then
+                printf '%s' "$candidate"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+read_port() {
+    local port=""
+    if command -v jq >/dev/null 2>&1 && [ -r "$CONFIG_FILE" ]; then
+        port=$(jq -r '.port // empty' "$CONFIG_FILE" 2>/dev/null)
+    fi
+    case "$port" in
+        ''|*[!0-9]*) port="$DEFAULT_PORT" ;;
+    esac
+    printf '%s' "$port"
+}
+
+check_process() {
+    [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null
+}
+
+check_port() {
+    (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1
+}
+
+status() {
+    if [ -f "$PID_FILE" ]; then
+        local pid
+        pid=$(head -n 1 "$PID_FILE" 2>/dev/null | tr -d '[:space:]')
+        if check_process "$pid"; then
+            return 0
+        fi
+        rm -f "$PID_FILE" 2>/dev/null
+    fi
+    return 1
+}
+
+# 兜底还原：只有在快照文件仍存在（说明守护进程没能优雅退出）时才执行
+restore_if_needed() {
+    [ -f "$SNAP_FILE" ] || return 0
+    local py
+    py=$(find_python) || {
+        log_msg "WARN: 快照仍存在但找不到 Python，无法兜底还原"
+        return 0
+    }
+    log_msg "检测到未还原的 EC 快照，执行兜底还原"
+    if "$py" "$RUNNER" --release >> "$LOG_FILE" 2>&1; then
+        log_msg "兜底还原完成"
+    else
+        log_msg "WARN: 兜底还原失败，风扇可能停留在最后写入的转速"
+    fi
+    return 0
+}
+
+start_process() {
+    if status; then
+        log_msg "已经在运行"
+        return 0
+    fi
+
+    if [ ! -r "$RUNNER" ]; then
+        fail "找不到启动脚本：$RUNNER（应用文件可能未正确安装）"
+        return 1
+    fi
+
+    local py
+    if ! py=$(find_python); then
+        fail "未找到 Python 3.8+ 解释器。请在应用中心安装 python312 后重试。"
+        return 1
+    fi
+
+    local port
+    port=$(read_port)
+    log_msg "启动 g2fan：$py $RUNNER（端口 $port）"
+
+    cd "$APPDEST/server" 2>/dev/null || cd "$APPDEST" 2>/dev/null || true
+    nohup "$py" "$RUNNER" >> "$LOG_FILE" 2>&1 &
+    local pid=$!
+    printf '%s' "$pid" > "$PID_FILE"
+    log_msg "已拉起进程 pid=$pid"
+
+    local i=0
+    while [ "$i" -lt 15 ]; do
+        sleep 1
+        if ! check_process "$pid"; then
+            rm -f "$PID_FILE"
+            fail "进程启动后立即退出，请查看日志 $LOG_FILE"
+            return 1
+        fi
+        if check_port "$port"; then
+            log_msg "启动成功，端口 $port 已就绪"
+            return 0
+        fi
+        i=$((i + 1))
+    done
+
+    # 进程还活着但端口未就绪：报告但不阻止启动，交由用户排查
+    log_msg "WARN: 15 秒内未检测到端口 $port 就绪，进程仍在运行 (pid=$pid)"
+    return 0
+}
+
+stop_process() {
+    log_msg "停止 g2fan ..."
+    if [ -r "$PID_FILE" ]; then
+        local pid
+        pid=$(head -n 1 "$PID_FILE" 2>/dev/null | tr -d '[:space:]')
+        if check_process "$pid"; then
+            log_msg "向 pid=$pid 发送 TERM，等待其释放风扇控制权"
+            kill -TERM "$pid" 2>/dev/null
+            local count=0
+            while check_process "$pid" && [ "$count" -lt 12 ]; do
+                sleep 1
+                count=$((count + 1))
+            done
+            if check_process "$pid"; then
+                log_msg "进程未在 12 秒内退出，发送 KILL"
+                kill -KILL "$pid" 2>/dev/null
+                sleep 1
+            fi
+        else
+            log_msg "进程已不存在，清理 PID 文件"
+        fi
+        rm -f "$PID_FILE" 2>/dev/null
+    fi
+
+    # 无论上面走了哪条路径，都确认一次风扇是否已交还固件
+    restore_if_needed
+    return 0
+}
+
+case "${1:-}" in
+    start)
+        start_process || exit 1
+        exit 0
+        ;;
+    stop)
+        stop_process || exit 1
+        exit 0
+        ;;
+    status)
+        if status; then
+            exit 0
+        fi
+        exit 3
+        ;;
+    *)
+        exit 1
+        ;;
+esac

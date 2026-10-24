@@ -1,0 +1,16 @@
+appname               = g2fan
+version               = 1.0.0
+display_name          = 风扇控制
+desc                  = 原生驱动拾光坞 G2 内置 EC 的风扇控制器：温控曲线自动调速、手动与全速模式、多层安全保护、Web 管理界面，无需厂商二进制。
+platform              = x86
+source                = thirdparty
+maintainer            = superqiuc
+maintainer_url        = https://developer.fnnas.com/
+distributor           = superqiuc
+os_min_version        = 1.2.0
+desktop_uidir         = ui
+desktop_applaunchname = g2fan.main
+ctl_stop              = true
+service_port          = 8798
+checkport             = false
+changelog             = v1.0.0 首个公开版本。

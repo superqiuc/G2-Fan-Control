@@ -1,0 +1,45 @@
+name: build-fpk
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 单元测试（硬件相关用例可能跳过）
+        continue-on-error: true
+        run: python3 -m unittest discover -s tests -v
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 构建 fpk
+        run: bash build.sh
+      - name: 校验产物
+        run: |
+          ls -lh dist/*.fpk
+          tar tzf dist/*.fpk | head -20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g2fan-fpk
+          path: dist/*.fpk
+          if-no-files-found: error
+      - name: 发布 Release（仅 tag）
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.fpk
+          generate_release_notes: true

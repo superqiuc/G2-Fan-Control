@@ -1,0 +1,49 @@
+[
+  {
+    "stepTitle": "风扇控制设置",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "这些设置也可以随时在应用网页界面中修改。保存后服务会自动重启以使配置生效。"
+      },
+      {
+        "type": "password",
+        "field": "wizard_password",
+        "label": "访问密码（留空表示不修改现有密码）",
+        "initValue": ""
+      },
+      {
+        "type": "select",
+        "field": "wizard_mode",
+        "label": "运行模式",
+        "initValue": "default",
+        "options": [
+          { "label": "默认曲线（推荐，低温安静）", "value": "default" },
+          { "label": "自定义曲线", "value": "auto" },
+          { "label": "手动固定转速", "value": "manual" },
+          { "label": "全速", "value": "full" }
+        ]
+      },
+      {
+        "type": "select",
+        "field": "wizard_temp_source",
+        "label": "温控依据",
+        "initValue": "cpu",
+        "options": [
+          { "label": "CPU 温度", "value": "cpu" },
+          { "label": "硬盘温度", "value": "disk" },
+          { "label": "两者最高值", "value": "max" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_manual_speed",
+        "label": "手动模式转速百分比（10-100）",
+        "initValue": "50",
+        "rules": [
+          { "pattern": "^[0-9]+$", "message": "请输入 10 到 100 之间的整数" }
+        ]
+      }
+    ]
+  }
+]
